@@ -31,6 +31,15 @@ use self::btdm as ble;
 #[cfg(bt_controller = "npl")]
 use self::npl as ble;
 
+/// Returns whether the caller runs in an interrupt handler.
+///
+/// The controller calls some of the OS glue from its interrupt handlers. Those calls must not
+/// block, so they use the try-variant of the operation.
+#[cfg(bt_controller = "npl")]
+pub(crate) fn in_isr() -> bool {
+    !crate::hal::interrupt::RunLevel::current().is_thread()
+}
+
 unstable_module! {
     pub mod controller;
 }
