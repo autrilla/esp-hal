@@ -1433,21 +1433,27 @@ unsafe extern "C" fn ble_hs_hci_rx_evt(cmd: *const u8, arg: *const c_void) -> i3
 unsafe extern "C" fn ble_hs_rx_data(om: *const OsMbuf, arg: *const c_void) -> i32 {
     trace!("ble_hs_rx_data {:?} {:?}", om, arg);
 
-    let data_ptr = unsafe { (*om).om_data };
-    let len = unsafe { (*om).om_len };
-    let data_slice = unsafe { core::slice::from_raw_parts(data_ptr, len as usize) };
-
     super::BT_STATE.with(|state| {
         let mut data = [0u8; 256];
 
         data[0] = 0x02; // ACL
-        data[1..][..data_slice.len()].copy_from_slice(data_slice);
+        let mut len = 1;
+        // The controller can put one ACL packet into a chain of mbufs.
+        let mut mbuf = om;
+        while !mbuf.is_null() {
+            let data_ptr = unsafe { (*mbuf).om_data };
+            let mbuf_len = unsafe { (*mbuf).om_len } as usize;
+            let data_slice = unsafe { core::slice::from_raw_parts(data_ptr, mbuf_len) };
+            data[len..][..mbuf_len].copy_from_slice(data_slice);
+            len += mbuf_len;
+            mbuf = unsafe { (*mbuf).next };
+        }
 
         state.rx_queue.push_back(ReceivedPacket {
-            data: Box::from(&data[..data_slice.len() + 1]),
+            data: Box::from(&data[..len]),
         });
 
-        super::dump_packet_info(&data[..(len + 1) as usize]);
+        super::dump_packet_info(&data[..len]);
     });
 
     unsafe {
