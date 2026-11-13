@@ -23,3 +23,36 @@ pub(crate) fn init_radio_clocks() {
 pub(crate) fn deinit_radio_clocks() {
     clocks_ll::deinit_clocks();
 }
+
+/// Counts the users of a clock. It switches the clock on for the first user and off after the
+/// last user.
+#[allow(unused)]
+pub(crate) struct Refcount {
+    count: esp_sync::NonReentrantMutex<usize>,
+}
+
+#[allow(unused)]
+impl Refcount {
+    pub(crate) const fn new() -> Self {
+        Self {
+            count: esp_sync::NonReentrantMutex::new(0),
+        }
+    }
+
+    pub(crate) fn update(&self, en: bool, f: fn(bool)) {
+        self.count.with(|refcount| {
+            let count = *refcount;
+            let run = if en {
+                *refcount = count + 1;
+                count == 0
+            } else {
+                // A radio deinit can disable a clock that it did not enable.
+                *refcount = count.saturating_sub(1);
+                count == 1
+            };
+            if run {
+                f(en);
+            }
+        });
+    }
+}
